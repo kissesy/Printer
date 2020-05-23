@@ -20,6 +20,8 @@ using System.Net;
 using System.Management;
 using Microsoft.Win32;
 using System.IO;
+using System.Net.Sockets;
+using System.Runtime.Serialization.Formatters.Binary;
 
 namespace Printer
 {
@@ -34,6 +36,10 @@ namespace Printer
         private string subnet;
         private int Default_Port = 9332;
 
+        private string SafeFileName;
+        private FileStream fs;
+        private byte[] FileBuf;
+
         //Thread SearchDevice_Thread = null;
 
         public MainWindow()
@@ -44,19 +50,41 @@ namespace Printer
             
         }
 
+        private byte[] ObjectToBytes(object obj)
+        {
+            BinaryFormatter bf = new BinaryFormatter();
+            MemoryStream ms = new MemoryStream();
+            bf.Serialize(ms, obj);
+            return ms.ToArray();
+        }
 
         private void Print_Click(object sender, RoutedEventArgs e)
         {
             //FIle Search한것에대해서도 체크 . IP와 port, NumberOf가 올바른 값인지 체크하기
             if ((IP_Text.Text == string.Empty)
                 || (Port_Text.Text == string.Empty)
-                || (NumberOf_Text.Text == string.Empty))
+                || (NumberOf_Text.Text == string.Empty)
+                || (FileName.Text == string.Empty))
             {
                 MessageBox.Show("Input Blank!", "Caption");
             }
             else
             {
-                //통신 되는지 아이피랑 포트로 통신 테스트 하기 
+                //통신 되는지 아이피랑 포트로 통신 테스트 하기
+                Packet packet = new Packet(SafeFileName, FileBuf.Length, FileBuf);
+                TcpClient client = new TcpClient();
+                client.Connect(IPAddress.Parse(IP_Text.Text), int.Parse(Port_Text.Text));
+                if (client.Connected)
+                {
+                    NetworkStream ns = client.GetStream();
+                    BinaryWriter writer = new BinaryWriter(ns);
+                    byte[] data = System.Text.Encoding.ASCII.GetBytes("hello world");
+                    //byte[] data = ObjectToBytes(packet);
+                    //서버측은 length 받고, data 길이만큼 받기
+                    
+                    //writer.Write(data.Length);
+                    writer.Write(data);
+                }
             }
         }
 
@@ -67,7 +95,7 @@ namespace Printer
             {
                 string extension = System.IO.Path.GetExtension(openFileDialog.FileName);
                 if(extension != ".pdf"
-                    || extension != ".txt")
+                    && extension != ".txt")
                 {
                     MessageBox.Show("Please Select Txt File or Pdf File!", "Caption");
                     return;
@@ -75,6 +103,11 @@ namespace Printer
                 else
                 {
                     FileName.Text = openFileDialog.FileName;
+                    SafeFileName = openFileDialog.SafeFileName;
+                    fs = new FileStream(FileName.Text, FileMode.Open, FileAccess.Read);
+                    FileBuf = new byte[fs.Length];
+                    fs.Read(FileBuf, 0, FileBuf.Length);
+                    fs.Close();
                     //파일 버퍼 모으기  File.ReadAllText(openFileDialog.FileName);
                 }
             }
@@ -221,6 +254,27 @@ namespace Printer
                 Port_Text.Text = Default_Port.ToString();
                 NumberOf_Text.Text = "1";
             }
+        }
+    }
+
+    public class Packet
+    {
+        public byte[] Data { get; private set; }
+        public string FileName
+        {
+            get;
+            private set;
+        }
+        public int Size
+        {
+            get;
+            private set;
+        }
+        public Packet(string filename, int fileLength, byte[] buf)
+        {
+            FileName = filename;
+            Data = buf;
+            Size = fileLength;
         }
     }
 
